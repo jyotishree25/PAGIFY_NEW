@@ -82,7 +82,8 @@ function AppMain() {
       <Route path="/seller/signup" element={<SellerSignup />} />
       <Route path="/seller/dashboard" element={<SellerDashboard />} />
       <Route path="/seller/add-book" element={<AddBook />} />
-      <Route path="/seller/manage-book" element={<ManageBook />} />
+      <Route path="/seller/manage-book/:productId" element={<ManageBook />} />
+
       <Route path="/seller/order" element={<SellerOrder />} />
 
       {/* Admin Routes */}
@@ -94,7 +95,10 @@ function AppMain() {
       <Route path="/admin/product-management" element={<ProductManagementWrapper />}/>
       <Route path="/admin/add-product" element={<AddProduct />}/>
 
-      <Route path="/admin/product-edit" element={<ProductEdit />} />
+      
+      
+      <Route path="/admin/products/edit/:productId" element={<ProductEdit />}/>
+
       <Route path="/admin/user-management" element={<UserManagement />} />
       <Route path="/admin/premium-user-management" element={<PremiumUserManagement />} />
       <Route path="/admin/general-user-management" element={<GeneralUserManagement />} />

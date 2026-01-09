@@ -8,23 +8,7 @@ const API_BASE_URL = 'http://localhost:8000/api/v1/auth/signup';
 // Main App component which contains the entire signup page.
 // We are exporting this as UserSignup, matching the router configuration.
 const UserSignup = () => {
-   useEffect(() => {
-  const token = localStorage.getItem('token');
-
-  if (!token) return;
-
-  axios.get('http://localhost:8000/api/v1/users/me', {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  })
-  .then(() => {
-    window.location.assign('/user/home');
-  })
-  .catch(() => {
-    localStorage.removeItem('token');
-  });
-}, []);
+   
 
   // State to manage form data
   const [formData, setFormData] = useState({

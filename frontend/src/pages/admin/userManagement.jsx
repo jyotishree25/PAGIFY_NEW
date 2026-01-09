@@ -1,17 +1,10 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
+import axios from "axios";
 
 export default function UserManagement({ onBack, darkMode }) {
-  const initialUsers = [
-    { id: "USR-001", name: "Emma Johnson", email: "emma@example.com", role: "Admin", status: "Active", type: "Premium" },
-    { id: "USR-002", name: "Noah Smith", email: "noah@example.com", role: "Seller", status: "Active", type: "Premium" },
-    { id: "USR-003", name: "Olivia Davis", email: "olivia@example.com", role: "Customer", status: "Suspended", type: "General" },
-    { id: "USR-004", name: "James Miller", email: "james@example.com", role: "Customer", status: "Active", type: "General" },
-    { id: "USR-005", name: "Sophia Wilson", email: "sophia@example.com", role: "Customer", status: "Active", type: "Premium" },
-    { id: "USR-006", name: "Liam Anderson", email: "liam@example.com", role: "Seller", status: "Active", type: "General" }
-  ];
-
-  // State for the main user data (to allow disabling/updating)
-  const [users, setUsers] = useState(initialUsers);
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("All");
@@ -21,6 +14,36 @@ export default function UserManagement({ onBack, darkMode }) {
   const [showDisablePopup, setShowDisablePopup] = useState(false);
   const [userToDisable, setUserToDisable] = useState(null);
   const [disableReason, setDisableReason] = useState("");
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const config = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+        
+        const response = await axios.get('http://localhost:8000/api/v1/users', config);
+        
+        if (response.data.status === 'success') {
+          const mappedUsers = response.data.users.map(u => ({
+            id: u._id,
+            name: u.name,
+            email: u.email,
+            role: "Customer", // Default role since not in User model
+            status: "Active", // Default status
+            type: "General"   // Default type
+          }));
+          setUsers(mappedUsers);
+        }
+      } catch (err) {
+        console.error("Error fetching users:", err);
+        setError("Failed to fetch users from server.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUsers();
+  }, []);
 
 
   const theme = darkMode
@@ -176,6 +199,15 @@ export default function UserManagement({ onBack, darkMode }) {
 
         {/* User Table */}
         <div className="overflow-x-auto">
+          {loading ? (
+            <div className={`p-8 text-center ${darkMode ? 'text-slate-300' : 'text-gray-600'}`}>
+              Loading users...
+            </div>
+          ) : error ? (
+            <div className="p-8 text-center text-rose-500">
+              {error}
+            </div>
+          ) : (
           <table className="w-full text-left text-sm">
             <thead>
               <tr className={darkMode ? "text-slate-300" : "text-black"}>
@@ -189,36 +221,45 @@ export default function UserManagement({ onBack, darkMode }) {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((u) => (
-                <tr key={u.id} className={`border-t ${darkMode ? 'border-slate-700' : 'border-gray-100'}`}>
-                  <td className={`py-3 pr-4 font-medium ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>{u.id}</td>
-                  <td className="py-3 pr-4">{u.name}</td>
-                  <td className="py-3 pr-4">{u.email}</td>
-                  <td className="py-3 pr-4">{u.role}</td>
-                  <td className="py-3 pr-4"><span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${typeClasses(u.type)}`}>{u.type}</span></td>
-                  <td className="py-3 pr-4"><span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${statusClasses(u.status)}`}>{u.status}</span></td>
-                  <td className="py-3 pr-0 text-right">
-                    {/* Conditional button text based on current status */}
-                    {u.status === "Active" ? (
-                        <button 
-                            onClick={() => openDisablePopup(u)} 
-                            className="px-3 py-1 rounded-md bg-rose-600 text-white hover:bg-rose-700 transition-all transform hover:scale-105"
-                        >
-                            Disable
-                        </button>
-                    ) : (
-                        <button 
-                            // Add an action to re-enable here in a real app
-                            className="px-3 py-1 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 transition-all transform hover:scale-105"
-                        >
-                            Activate
-                        </button>
-                    )}
+              {filtered.length > 0 ? (
+                filtered.map((u) => (
+                  <tr key={u.id} className={`border-t ${darkMode ? 'border-slate-700' : 'border-gray-100'}`}>
+                    <td className={`py-3 pr-4 font-medium ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>{u.id}</td>
+                    <td className="py-3 pr-4">{u.name}</td>
+                    <td className="py-3 pr-4">{u.email}</td>
+                    <td className="py-3 pr-4">{u.role}</td>
+                    <td className="py-3 pr-4"><span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${typeClasses(u.type)}`}>{u.type}</span></td>
+                    <td className="py-3 pr-4"><span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${statusClasses(u.status)}`}>{u.status}</span></td>
+                    <td className="py-3 pr-0 text-right">
+                      {/* Conditional button text based on current status */}
+                      {u.status === "Active" ? (
+                          <button 
+                              onClick={() => openDisablePopup(u)} 
+                              className="px-3 py-1 rounded-md bg-rose-600 text-white hover:bg-rose-700 transition-all transform hover:scale-105"
+                          >
+                              Disable
+                          </button>
+                      ) : (
+                          <button 
+                              // Add an action to re-enable here in a real app
+                              className="px-3 py-1 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 transition-all transform hover:scale-105"
+                          >
+                              Activate
+                          </button>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="7" className="py-8 text-center text-gray-500">
+                    No users found matching your filters.
                   </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
+          )}
         </div>
       </div>
 

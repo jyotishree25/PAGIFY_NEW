@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { UserRound, Building, CreditCard, Settings, Eye, EyeOff, RefreshCw } from "lucide-react";
 import { ToastContainer, toast } from 'react-toastify';
+import axios from "axios";
 
 export default function SellerSignup() {
   const navigate = useNavigate();
@@ -68,13 +69,23 @@ export default function SellerSignup() {
     return isValid;
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!validateForm()) return;
-    console.log("Signup Data:", formData);
-    toast.success("Signup successful! Redirecting to login...", { theme: "colored" });
-    setTimeout(() => navigate("/seller/login"), 2000);
-  };
+  const handleSubmit = async (e) => {
+  e.preventDefault();
+  if (!validateForm()) return;
+
+  try {
+    await axios.post("http://localhost:8000/api/v1/sellers/signup", formData);
+
+    toast.success("Signup successful! Please login.", { theme: "colored" });
+    setTimeout(() => navigate("/seller/login"), 1500);
+  } catch (err) {
+    toast.error(
+      err.response?.data?.message || "Signup failed",
+      { theme: "colored" }
+    );
+  }
+};
+
 
   const handleTabChange = (tab) => {
     if (activeTab === "profile" && !validateForm()) {

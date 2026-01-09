@@ -1,6 +1,12 @@
 import React, { useState } from "react";
+import { useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
-export default function ProductEdit({ onBack, darkMode, productId }) {
+
+
+export default function ProductEdit({ onBack, darkMode }) {
+   const { productId } = useParams();
+     const navigate = useNavigate();
   // Initial product state with default values
   const [product, setProduct] = useState({
     id: productId || "",
@@ -13,23 +19,29 @@ export default function ProductEdit({ onBack, darkMode, productId }) {
     imageUrl: ""
   });
 
-  // Fetch product data based on ID (simulated)
-  React.useEffect(() => {
-    // In a real app, you would fetch from an API
-    if (productId) {
-      // Simulated product data
-      const productData = {
-        "BK-001": { id: "BK-001", title: "The Great Gatsby", price: 12.99, stock: 32, status: "Active", description: "F. Scott Fitzgerald's classic novel", category: "Fiction", imageUrl: "" },
-        "BK-002": { id: "BK-002", title: "To Kill a Mockingbird", price: 10.5, stock: 0, status: "Draft", description: "Harper Lee's masterpiece", category: "Fiction", imageUrl: "" },
-        "BK-003": { id: "BK-003", title: "1984", price: 9.99, stock: 14, status: "Active", description: "George Orwell's dystopian novel", category: "Fiction", imageUrl: "" },
-        "BK-004": { id: "BK-004", title: "Pride and Prejudice", price: 11.25, stock: 6, status: "Archived", description: "Jane Austen's romantic novel", category: "Classic", imageUrl: "" }
-      };
-      
-      if (productData[productId]) {
-        setProduct(productData[productId]);
-      }
+ React.useEffect(() => {
+  if (!productId) return;
+
+  async function fetchProduct() {
+    try {
+      const res = await fetch(
+        `http://localhost:8000/api/v1/products/${productId}`
+      );
+      const data = await res.json();
+
+      setProduct({
+        ...data,
+        id: data.id, // keep SKU
+      });
+    } catch (err) {
+      console.error("Failed to fetch product", err);
     }
-  }, [productId]);
+  }
+
+  fetchProduct();
+}, [productId]);
+
+
 
   const theme = darkMode
     ? {
@@ -67,24 +79,37 @@ export default function ProductEdit({ onBack, darkMode, productId }) {
     }));
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    // Here you would typically save the product data
-    console.log('Saving product:', product);
-    // Navigate back to product management
-    onBack();
-  };
+  const handleSubmit = async (e) => {
+  e.preventDefault();
+
+  try {
+    await fetch(`http://localhost:8000/api/v1/products/${productId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(product),
+    });
+
+    alert("Product updated successfully");
+    navigate("/admin/product-management");
+  } catch (err) {
+    console.error("Update failed", err);
+    alert("Update failed");
+  }
+};
+
+
 
   return (
     <div className={`min-h-screen ${theme.bg} ${theme.text} p-4 md:p-8`}>
       <div className={`${theme.cardBg} rounded-xl shadow-md border ${theme.border} p-5 md:p-6 max-w-4xl mx-auto`}>
         <div className="flex items-center gap-2 mb-6">
           <button 
-            onClick={onBack} 
-            className={`p-2 rounded-full border ${theme.border} hover:opacity-90 transition-all transform hover:scale-110`} 
-            aria-label="Back to products" 
-            title="Back"
-          >
+           onClick={() => navigate("/admin/product-management")}
+           className={`p-2 rounded-full border ${theme.border} hover:opacity-90 transition-all transform hover:scale-110`}
+          aria-label="Back to products"
+        title="Back"
+        >
+
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
               <path fillRule="evenodd" d="M12.707 15.707a1 1 0 01-1.414 0l-5-5a1 1 0 010-1.414l5-5a1 1 0 111.414 1.414L8.414 9H17a1 1 0 110 2H8.414l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" />
             </svg>

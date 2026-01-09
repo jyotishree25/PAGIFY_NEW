@@ -29,6 +29,9 @@ import {
 } from 'lucide-react';
 
 export default function HomePage() {
+  const [booksFromDB, setBooksFromDB] = useState([]);
+  const [loadingBooks, setLoadingBooks] = useState(true);
+
   const [activeTab, setActiveTab] = useState("Popular");
   const [wishlist, setWishlist] = useState([]);
   const [cart, setCart] = useState([]);
@@ -78,38 +81,148 @@ export default function HomePage() {
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [hoveredItem, setHoveredItem] = useState(null);
   const [hoveredHeaderItem, setHoveredHeaderItem] = useState(null);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [editFormData, setEditFormData] = useState({});
+  const fileInputRef = useRef(null);
+
+  const handleProfileImageUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('profilePicture', file);
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.post('http://localhost:8000/api/v1/users/upload-profile-picture', formData, {
+        headers: { 
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'multipart/form-data'
+        }
+      });
+      
+      if (response.data.status === 'success') {
+        setUserProfile(response.data.user);
+        setProfileImage(response.data.user.profilePicture);
+      }
+    } catch (err) {
+      console.error('Upload error:', err);
+      alert('Failed to upload profile picture.');
+    }
+  };
+
+  const handleProfileUpdate = async (e) => {
+    e.preventDefault();
+
+    // Validation
+    if (!editFormData.name || !editFormData.phone) {
+      alert('Name and Phone are required.');
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('token');
+
+      // Explicit payload to ensure we only send what we intend
+      const payload = {
+        name: editFormData.name,
+        // email is disabled in form, but we include it if needed. 
+        // If backend allows updating email, it will be processed.
+        email: editFormData.email, 
+        phone: editFormData.phone,
+        gender: editFormData.gender || 'female',
+        address: editFormData.address,
+        bankAccount: editFormData.bankAccount,
+        ifscCode: editFormData.ifscCode
+      };
+
+      const response = await axios.patch('http://localhost:8000/api/v1/users/me', payload, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      if (response.data.status === 'success') {
+        // Update token if provided by backend (e.g. if email changed)
+        if (response.data.token) {
+          localStorage.setItem('token', response.data.token);
+        }
+
+        setUserProfile(response.data.user);
+        setIsEditingProfile(false);
+        alert('Profile updated successfully!');
+      }
+    } catch (err) {
+      console.error('Update error:', err);
+      alert(err?.response?.data?.message || 'Failed to update profile.');
+    }
+  };
 
   
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const popupRef = useRef(null);
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+
+    if (!token) {
+      window.location.assign('/user/login');
+      return;
+    }
+
+    axios.get('http://localhost:8000/api/v1/users/me', {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+    .then((res) => {
+        if (res.data.status === 'success') {
+            const user = res.data.user;
+            setUserProfile({
+                name: user.name || '',
+                email: user.email || '',
+                username: user.email ? user.email.split('@')[0] : '',
+                phoneNumber: user.phone || '',
+                birthdate: '', // Not in DB yet
+                gender: user.gender || '',
+                accountStatus: 'Active',
+                address: user.address || '',
+                bankAccount: user.bankAccount || '',
+                ifscCode: user.ifscCode || ''
+            });
+            setEditFormData({
+                name: user.name || '',
+                email: user.email || '',
+                phone: user.phone || '',
+                gender: user.gender || '',
+                address: user.address || '',
+                bankAccount: user.bankAccount || '',
+                ifscCode: user.ifscCode || ''
+            });
+            if (user.profilePicture) {
+                setProfileImage(user.profilePicture);
+            } else {
+                setProfileImage(null);
+            }
+        }
+    })
+    .catch(() => {
+      localStorage.removeItem('token');
+      window.location.assign('/user/login');
+    });
+  }, []);
 
 useEffect(() => {
-  const token = localStorage.getItem('token');
-
-  // 1️⃣ No token → redirect to login
-  if (!token) {
-    window.location.assign('/user/login');
-    return;
-  }
-
-  // 2️⃣ Verify token with backend
-  axios.get('http://localhost:8000/api/v1/users/me', {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  })
-  .then((res) => {
-    // ✅ Token valid → allow access
-    // OPTIONAL:
-    // setUserProfile(res.data.user);
-  })
-  .catch(() => {
-  console.error('Auth check failed:', err);
-  localStorage.removeItem('token');
-  window.location.assign('/user/login');
-  });
+  axios
+    .get('http://localhost:8000/api/v1/products/public')
+    .then((res) => {
+      setBooksFromDB(res.data.products);
+    })
+    .catch((err) => {
+      console.error('Failed to load books', err);
+    })
+    .finally(() => {
+      setLoadingBooks(false);
+    });
 }, []);
 
 
@@ -124,7 +237,11 @@ useEffect(() => {
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, []);
+  }, []);// ===============================
+// DB PRODUCT → UI BOOK CARD
+// ===============================
+
+
 
   const handleThemeToggle = () => {
     setTheme(theme === "light" ? "dark" : "light");
@@ -201,7 +318,21 @@ useEffect(() => {
     }
     return initials;
   };
-  
+  // ===============================
+// MAP DB PRODUCT → UI BOOK CARD
+// ===============================
+const mapProductToBookCard = (product) => {
+  return {
+    id: product._id,
+    title: product.title,
+    author: product.author || "Unknown Author",
+    cover:
+      product.coverImage ||
+      "https://placehold.co/200x300?text=Book",
+    price: `₹${product.price}`,
+  };
+};
+
   const handleAddAddress = () => {
     setAddresses([...addresses, { ...newAddress, default: false }]);
     setIsAddingAddress(false);
@@ -400,59 +531,7 @@ useEffect(() => {
     setWishlist(wishlist.filter(item => item.id !== bookId));
   };
 
-  const bookData = {
-    "Popular": [
-      { id: 1, title: "I owe you one", author: "Sophie Kinsella", progress: 85, cover: "https://images-na.ssl-images-amazon.com/images/S/compressed.photo.goodreads.com/books/1539282361i/42369796.jpg", price: "₹350" },
-      { id: 2, title: "Factfulness", author: "Hans Rosling", progress: 75, cover: "https://images-na.ssl-images-amazon.com/images/S/compressed.photo.goodreads.com/books/1523450989i/34890015.jpg", price: "₹500" },
-      { id: 3, title: "The Other Son", author: "Nick Alexander", progress: 92, cover: "https://images-na.ssl-images-amazon.com/images/S/compressed.photo.goodreads.com/books/1360183184i/17260533.jpg", price: "₹280" },
-      { id: 4, title: "Can you keep a secret", author: "Sophie Kinsella", progress: 68, cover: "https://images-na.ssl-images-amazon.com/images/S/compressed.photo.goodreads.com/books/1362040103i/6207.jpg", price: "₹399" },
-      { id: 5, title: "Educated", author: "Tara Westover", progress: 55, cover: "https://images-na.ssl-images-amazon.com/images/S/compressed.photo.goodreads.com/books/1505417436i/35619932.jpg", price: "₹450" },
-    ],
-    "Top Selling": [
-      { id: 6, title: "The Alchemist", author: "Paulo Coelho", progress: 99, cover: "https://images-na.ssl-images-amazon.com/images/S/compressed.photo.goodreads.com/books/1483415668i/18144590.jpg", price: "₹250" },
-      { id: 7, title: "The Hobbit", author: "J.R.R. Tolkien", progress: 98, cover: "https://images-na.ssl-images-amazon.com/images/S/compressed.photo.goodreads.com/books/1546071216i/5907.jpg", price: "₹420" },
-    ],
-    "Following": [
-      { id: 8, title: "Sapiens", author: "Yuval Noah Harari", progress: 70, cover: "https://images-na.ssl-images-amazon.com/images/S/compressed.photo.goodreads.com/books/1458992095i/23692271.jpg", price: "₹600" },
-    ],
-    "New": [
-      { id: 9, title: "The Midnight Library", author: "Matt Haig", progress: 10, cover: "https://images-na.ssl-images-amazon.com/images/S/compressed.photo.goodreads.com/books/1585800040i/52578280.jpg", price: "₹480" },
-      { id: 10, title: "Where the Crawdads Sing", author: "Delia Owens", progress: 15, cover: "https://images-na.ssl-images-amazon.com/images/S/compressed.photo.goodreads.com/books/1572979603i/36809135.jpg", price: "₹520" },
-    ],
-  };
-  const trendingBooks = [
-    { id: 11, title: "The Silent Patient", author: "Alex Michaelides", cover: "https://images-na.ssl-images-amazon.com/images/S/compressed.photo.goodreads.com/books/1531741517i/40097951.jpg", price: "₹499" },
-    { id: 12, title: "The Vanishing Half", author: "Brit Bennett", cover: "https://images-na.ssl-images-amazon.com/images/S/compressed.photo.goodreads.com/books/1569477028i/51356897.jpg", price: "₹350" },
-    { id: 13, title: "Project Hail Mary", author: "Andy Weir", cover: "https://images-na.ssl-images-amazon.com/images/S/compressed.photo.goodreads.com/books/1601618304i/54471900.jpg", price: "₹620" },
-    { id: 14, title: "Dune", author: "Frank Herbert", cover: "https://images-na.ssl-images-amazon.com/images/S/compressed.photo.goodreads.com/books/1555546505i/44767458.jpg", price: "₹480" },
-    { id: 15, title: "Little Fires Everywhere", author: "Celeste Ng", cover: "https://images-na.ssl-images-amazon.com/images/S/compressed.photo.goodreads.com/books/1500645681i/34273236.jpg", price: "₹299" },
-  ];
-  const newArrivals = [
-    { id: 19, title: "The Echoing Silence", author: "Evelyn Reed", cover: "https://images-na.ssl-images-amazon.com/images/S/compressed.photo.goodreads.com/books/1614050212i/55026903.jpg", price: "₹399" },
-    { id: 20, title: "Beyond the Horizon", author: "Marcus Thorne", cover: "https://images-na.ssl-images-amazon.com/images/S/compressed.photo.goodreads.com/books/1585250438i/51559139.jpg", price: "₹450" },
-    { id: 21, title: "The Glass Key", author: "Serena Walsh", cover: "https://images-na.ssl-images-amazon.com/images/S/compressed.photo.goodreads.com/books/1388045330i/22718.jpg", price: "₹280" },
-  ];
-  const recommendedBooks = [
-    { id: 16, title: "Circe", author: "Madeline Miller", cover: "https://images-na.ssl-images-amazon.com/images/S/compressed.photo.goodreads.com/books/1520119842i/35959740.jpg", price: "₹550" },
-    { id: 17, title: "The Song of Achilles", author: "Madeline Miller", cover: "https://images-na.ssl-images-amazon.com/images/S/compressed.photo.goodreads.com/books/1529606001i/13623060.jpg", price: "₹580" },
-    { id: 18, title: "Kafka on the Shore", author: "Haruki Murakami", cover: "https://images-na.ssl-images-amazon.com/images/S/compressed.photo.goodreads.com/books/1531238495i/4929.jpg", price: "₹450" },
-  ];
-  const genres = [
-    { id: 1, name: "Fiction", icon: <Book className={`h-10 w-10 ${currentTheme.accent}`} />, description: "Explore imaginary worlds and captivating stories." },
-    { id: 2, name: "Non-fiction", icon: <Brain className={`h-10 w-10 ${currentTheme.accent}`} />, description: "Learn about real events and concepts." },
-    { id: 3, name: "Sci-Fi", icon: <Rocket className={`h-10 w-10 ${currentTheme.accent}`} />, description: "Travel to the future with advanced technology and alien life." },
-    { id: 4, name: "Fantasy", icon: <Ghost className={`h-10 w-10 ${currentTheme.accent}`} />, description: "Enter realms of magic, mythical creatures, and epic quests." },
-    { id: 5, name: "Mystery", icon: <Search className={`h-10 w-10 ${currentTheme.accent}`} />, description: "Solve thrilling puzzles and uncover hidden secrets." },
-    { id: 6, name: "Thriller", icon: <Award className={`h-10 w-10 ${currentTheme.accent}`} />, description: "Experience suspense and shocking plot twists." },
-  ];
-  const bestsellers = [
-    { id: 20, title: "The Subtle Art of Not Giving a F*ck", author: "Mark Manson", cover: "https://images-na.ssl-images-amazon.com/images/S/compressed.photo.goodreads.com/books/1465715974i/28257707.jpg", price: "₹380" },
-    { id: 21, title: "Atomic Habits", author: "James Clear", cover: "https://images-na.ssl-images-amazon.com/images/S/compressed.photo.goodreads.com/books/1535115320i/40121378.jpg", price: "₹450" },
-    { id: 22, title: "The Da Vinci Code", author: "Dan Brown", cover: "https://images-na.ssl-images-amazon.com/images/S/compressed.photo.goodreads.com/books/1594242661i/968.jpg", price: "₹500" },
-    { id: 23, title: "Harry Potter", author: "J.K. Rowling", cover: "https://images-na.ssl-images-amazon.com/images/S/compressed.photo.goodreads.com/books/1614050212i/55026903.jpg", price: "₹650" },
-    { id: 24, title: "The Catcher in the Rye", author: "J.D. Salinger", cover: "https://images-na.ssl-images-amazon.com/images/S/compressed.photo.goodreads.com/books/1398240562i/5107.jpg", price: "₹280" },
-  ];
-
+  
   // Reusable tab component
   const Tab = ({ name }) => (
     <motion.button
@@ -704,15 +783,16 @@ useEffect(() => {
         </div>
         <motion.button
           onClick={() => {
-            setIsAddingAddress(true);
             setShowAddressModal(false);
-            setView('edit-profile');
+            setView('my-profile');
+            setEditFormData(userProfile);
+            setIsEditingProfile(true);
           }}
           className={`mt-4 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-full font-semibold transition-colors`}
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
         >
-          Add New Address
+          Edit Address
         </motion.button>
         <motion.button
           onClick={() => setShowAddressModal(false)}
@@ -803,242 +883,195 @@ useEffect(() => {
     </motion.li>
   );
 
-  const renderMyProfile = () => (
+  const calculateProfileCompletion = () => {
+    const fields = ['name', 'email', 'phoneNumber', 'gender', 'address', 'bankAccount', 'ifscCode'];
+    let filled = 0;
+    fields.forEach(field => {
+      if (userProfile[field] && userProfile[field].trim() !== '') filled++;
+    });
+    if (profileImage && !profileImage.includes('placehold.co')) filled++;
+    // Total fields = 7 text fields + 1 image = 8
+    return Math.round((filled / 8) * 100);
+  };
+
+  const renderMyProfile = () => {
+    const completion = calculateProfileCompletion();
+    
+    return (
     <div className={`p-6 rounded-xl shadow-md w-full ${currentTheme.cardBg} flex flex-col`}>
       <div className="flex items-center space-x-4 mb-6">
-        <motion.button onClick={() => setView('dashboard')} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} className="p-2 rounded-full">
+        <motion.button onClick={() => {
+            if(isEditingProfile) setIsEditingProfile(false);
+            else setView('dashboard');
+        }} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} className="p-2 rounded-full">
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`lucide lucide-chevron-left ${currentTheme.textColor}`}><path d="m15 18-6-6 6-6"/></svg>
         </motion.button>
-        <h2 className={`text-2xl font-bold flex-1 ${currentTheme.textColor}`}>My Profile</h2>
+        <h2 className={`text-2xl font-bold flex-1 ${currentTheme.textColor}`}>{isEditingProfile ? 'Edit Profile' : 'My Profile'}</h2>
       </div>
+
       <div className="flex flex-col items-center mb-6 text-center">
-        <div className="relative h-24 w-24 rounded-full flex items-center justify-center bg-gray-200 dark:bg-gray-700 overflow-hidden mb-2">
+        {/* Profile Image with Camera Overlay */}
+        <div 
+          className="relative group h-24 w-24 rounded-full flex items-center justify-center bg-gray-200 dark:bg-gray-700 overflow-hidden mb-2 cursor-pointer"
+          onClick={() => fileInputRef.current.click()}
+        >
           {profileImage ? (
             <img src={profileImage} alt="Profile" className="object-cover h-full w-full" />
           ) : (
             <span className={`text-4xl font-bold ${currentTheme.secondaryTextColor}`}>{getInitials(userProfile.name)}</span>
           )}
+          <div className="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+            <Camera className="text-white h-8 w-8" />
+          </div>
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            className="hidden" 
+            accept="image/*" 
+            onChange={handleProfileImageUpload} 
+          />
         </div>
-        <h3 className={`text-xl font-semibold ${currentTheme.textColor}`}>{userProfile.name}</h3>
-        <p className={`text-sm ${currentTheme.secondaryTextColor}`}>{userProfile.email}</p>
-        <motion.button
-          onClick={() => setView('edit-profile')}
-          className={`mt-4 px-4 py-2 text-sm rounded-full border-2 ${currentTheme.inputBorder} ${currentTheme.accent} font-semibold transition-colors duration-200`}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-        >
-          Edit Profile
-        </motion.button>
-      </div>
-      <div className="w-full">
-        <ul className={`divide-y ${theme === 'light' ? 'divide-gray-200' : 'divide-gray-800'}`}>
-          <ProfileListItem name="Favourites" icon={<Heart />} onClick={() => setView('wishlist')} />
-          <ProfileListItem name="Downloads" icon={<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`lucide lucide-download ${currentTheme.textColor}`}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>} onClick={() => setShowDownloadModal(true)} />
-          <div className={`h-px my-4 ${theme === 'light' ? 'bg-gray-200' : 'bg-gray-800'}`}></div>
-          <ProfileListItem name="Address" icon={<MapPin />} onClick={() => setShowAddressModal(true)} />
-          <ProfileListItem name="Display" icon={<Monitor />} onClick={() => setShowDisplayModal(true)} />
-          <ProfileListItem name="Help" icon={<HelpCircle />} onClick={() => setShowHelpModal(true)} />
-          <ProfileListItem name="Logout" icon={<LogOut />} onClick={() => setShowLogoutConfirmation(true)} />
-        </ul>
-      </div>
-    </div>
-  );
 
-  // Render function for the edit profile view
-  const renderEditProfile = () => (
-    <div className={`p-6 rounded-xl shadow-md w-full ${currentTheme.cardBg} flex flex-col`}>
-      <div className="flex items-center space-x-4 mb-6">
-        <motion.button onClick={() => setView('my-profile')} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} className="p-2 rounded-full">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`lucide lucide-chevron-left ${currentTheme.textColor}`}><path d="m15 18-6-6 6-6"/></svg>
-        </motion.button>
-        <h2 className={`text-2xl font-bold flex-1 ${currentTheme.textColor}`}>{isChangingPassword ? 'Change Password' : 'Edit Profile'}</h2>
-        {!isChangingPassword && (
-          <motion.button
-            onClick={() => setIsChangingPassword(true)}
-            className={`text-sm font-semibold ${currentTheme.accent}`}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            Change Password
-          </motion.button>
+        {!isEditingProfile && (
+            <>
+                <h3 className={`text-xl font-semibold ${currentTheme.textColor}`}>{userProfile.name}</h3>
+                <p className={`text-sm ${currentTheme.secondaryTextColor}`}>{userProfile.email}</p>
+                
+                {/* Completion Bar */}
+                <div className="w-full max-w-xs mt-4">
+                    <div className="flex justify-between text-xs font-medium mb-1">
+                        <span className={currentTheme.secondaryTextColor}>Profile Completion</span>
+                        <span className="text-emerald-500">{completion}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div 
+                            className="bg-emerald-500 h-2 rounded-full transition-all duration-500" 
+                            style={{ width: `${completion}%` }}
+                        ></div>
+                    </div>
+                </div>
+
+                <motion.button
+                  onClick={() => {
+                      setEditFormData(userProfile);
+                      setIsEditingProfile(true);
+                  }}
+                  className={`mt-6 px-6 py-2 text-sm rounded-full border-2 ${currentTheme.inputBorder} ${currentTheme.accent} font-semibold transition-colors duration-200`}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  Edit Profile
+                </motion.button>
+            </>
         )}
       </div>
-      <div className="flex flex-col items-center mb-6 text-center">
-        <div className="relative h-32 w-32 rounded-full flex items-center justify-center bg-emerald-500 text-white text-3xl font-bold overflow-hidden cursor-pointer">
-          {profileImage ? (
-            <img src={profileImage} alt="Profile" className="object-cover h-full w-full" />
-          ) : isCameraActive ? (
-            <video ref={videoRef} className="h-full w-full object-cover" autoPlay playsInline />
-          ) : (
-            <span className="text-3xl font-bold">{getInitials(userProfile.name)}</span>
-          )}
-          <motion.button
-            onClick={() => {
-              if (!isCameraActive) startCamera();
-            }}
-            className="absolute bottom-0 right-0 p-1 rounded-full bg-gray-800 text-white"
-          >
-            <Camera className="h-5 w-5" />
-          </motion.button>
-          <canvas ref={canvasRef} style={{ display: 'none' }} />
-        </div>
-        <div className="mt-4">
-          <h3 className={`text-lg font-semibold ${currentTheme.textColor}`}>{userProfile.name}</h3>
-          <p className={`text-sm ${currentTheme.secondaryTextColor}`}>{userProfile.email}</p>
-        </div>
-      </div>
-      {isCameraActive && (
-        <div className="flex space-x-2 mb-6">
-          <motion.button
-            onClick={takePhoto}
-            className={`flex-1 px-4 py-2 rounded-full font-semibold ${currentTheme.accentButtonBg} ${currentTheme.accentButtonHover} text-white transition-colors duration-200`}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            Take Photo
-          </motion.button>
-          <motion.button
-            onClick={stopCamera}
-            className={`flex-1 px-4 py-2 rounded-full font-semibold border-2 border-gray-400 text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-200`}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            Cancel
-          </motion.button>
+
+      {isEditingProfile ? (
+        <form onSubmit={handleProfileUpdate} className="w-full max-w-2xl mx-auto space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label className={`block text-sm font-medium mb-1 ${currentTheme.secondaryTextColor}`}>Full Name</label>
+                    <input 
+                        type="text" 
+                        value={editFormData.name || ''} 
+                        onChange={(e) => setEditFormData({...editFormData, name: e.target.value})}
+                        className={`w-full p-2 rounded-lg border ${currentTheme.inputBorder} ${currentTheme.cardBg} ${currentTheme.textColor} focus:ring-2 focus:ring-emerald-500 outline-none`}
+                    />
+                </div>
+                <div>
+                    <label className={`block text-sm font-medium mb-1 ${currentTheme.secondaryTextColor}`}>Phone Number</label>
+                    <input 
+                        type="text" 
+                        value={editFormData.phone || ''} 
+                        onChange={(e) => setEditFormData({...editFormData, phone: e.target.value})}
+                        className={`w-full p-2 rounded-lg border ${currentTheme.inputBorder} ${currentTheme.cardBg} ${currentTheme.textColor} focus:ring-2 focus:ring-emerald-500 outline-none`}
+                    />
+                </div>
+                <div>
+                    <label className={`block text-sm font-medium mb-1 ${currentTheme.secondaryTextColor}`}>Gender</label>
+                    <select 
+                        value={editFormData.gender || 'female'} 
+                        onChange={(e) => setEditFormData({...editFormData, gender: e.target.value})}
+                        className={`w-full p-2 rounded-lg border ${currentTheme.inputBorder} ${currentTheme.cardBg} ${currentTheme.textColor} focus:ring-2 focus:ring-emerald-500 outline-none`}
+                    >
+                        <option value="male">Male</option>
+                        <option value="female">Female</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                 <div>
+                    <label className={`block text-sm font-medium mb-1 ${currentTheme.secondaryTextColor}`}>Email</label>
+                    <input 
+                        type="email" 
+                        value={editFormData.email || ''} 
+                        disabled
+                        className={`w-full p-2 rounded-lg border ${currentTheme.inputBorder} bg-gray-100 dark:bg-gray-800 ${currentTheme.secondaryTextColor} cursor-not-allowed`}
+                    />
+                </div>
+                <div className="md:col-span-2">
+                    <label className={`block text-sm font-medium mb-1 ${currentTheme.secondaryTextColor}`}>Address</label>
+                    <textarea 
+                        value={editFormData.address || ''} 
+                        onChange={(e) => setEditFormData({...editFormData, address: e.target.value})}
+                        className={`w-full p-2 rounded-lg border ${currentTheme.inputBorder} ${currentTheme.cardBg} ${currentTheme.textColor} focus:ring-2 focus:ring-emerald-500 outline-none`}
+                        rows="3"
+                    />
+                </div>
+                <div className="md:col-span-2 grid grid-cols-2 gap-4">
+                    <div>
+                        <label className={`block text-sm font-medium mb-1 ${currentTheme.secondaryTextColor}`}>Bank Account</label>
+                        <input 
+                            type="text" 
+                            value={editFormData.bankAccount || ''} 
+                            onChange={(e) => setEditFormData({...editFormData, bankAccount: e.target.value})}
+                            className={`w-full p-2 rounded-lg border ${currentTheme.inputBorder} ${currentTheme.cardBg} ${currentTheme.textColor} focus:ring-2 focus:ring-emerald-500 outline-none`}
+                        />
+                    </div>
+                    <div>
+                        <label className={`block text-sm font-medium mb-1 ${currentTheme.secondaryTextColor}`}>IFSC Code</label>
+                        <input 
+                            type="text" 
+                            value={editFormData.ifscCode || ''} 
+                            onChange={(e) => setEditFormData({...editFormData, ifscCode: e.target.value})}
+                            className={`w-full p-2 rounded-lg border ${currentTheme.inputBorder} ${currentTheme.cardBg} ${currentTheme.textColor} focus:ring-2 focus:ring-emerald-500 outline-none`}
+                        />
+                    </div>
+                </div>
+            </div>
+            <div className="flex justify-end space-x-4 mt-6">
+                <button 
+                    type="button"
+                    onClick={() => setIsEditingProfile(false)}
+                    className="px-4 py-2 rounded-lg text-gray-500 hover:text-gray-700 font-medium"
+                >
+                    Cancel
+                </button>
+                <button 
+                    type="submit"
+                    className="px-6 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-md transition-colors"
+                >
+                    Save Changes
+                </button>
+            </div>
+        </form>
+      ) : (
+        <div className="w-full">
+            <ul className={`divide-y ${theme === 'light' ? 'divide-gray-200' : 'divide-gray-800'}`}>
+            <ProfileListItem name="Favourites" icon={<Heart />} onClick={() => setView('wishlist')} />
+            <ProfileListItem name="Downloads" icon={<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`lucide lucide-download ${currentTheme.textColor}`}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>} onClick={() => setShowDownloadModal(true)} />
+            <div className={`h-px my-4 ${theme === 'light' ? 'bg-gray-200' : 'bg-gray-800'}`}></div>
+            <ProfileListItem name="Address" icon={<MapPin />} onClick={() => setShowAddressModal(true)} />
+            <ProfileListItem name="Display" icon={<Monitor />} onClick={() => setShowDisplayModal(true)} />
+            <ProfileListItem name="Help" icon={<HelpCircle />} onClick={() => setShowHelpModal(true)} />
+            <ProfileListItem name="Logout" icon={<LogOut />} onClick={() => setShowLogoutConfirmation(true)} />
+            </ul>
         </div>
       )}
-      <div className="space-y-6 mb-8">
-        {!isChangingPassword ? (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="space-y-4"
-          >
-            <div>
-              <label className={`block text-sm font-medium ${currentTheme.secondaryTextColor} mb-1`}>Name</label>
-              <input
-                type="text"
-                value={userProfile.name}
-                onChange={(e) => setUserProfile({ ...userProfile, name: e.target.value })}
-                className={`w-full px-4 py-2 rounded-lg border-2 ${currentTheme.inputBorder} ${currentTheme.inputBg} ${theme === 'dark' ? 'text-gray-900' : currentTheme.textColor} focus:outline-none focus:ring-2 focus:ring-emerald-300`}
-              />
-            </div>
-            <div>
-              <label className={`block text-sm font-medium ${currentTheme.secondaryTextColor} mb-1`}>Email</label>
-              <input
-                type="email"
-                value={userProfile.email}
-                onChange={(e) => setUserProfile({ ...userProfile, email: e.target.value })}
-                className={`w-full px-4 py-2 rounded-lg border-2 ${currentTheme.inputBorder} ${currentTheme.inputBg} ${theme === 'dark' ? 'text-gray-900' : currentTheme.textColor} focus:outline-none focus:ring-2 focus:ring-emerald-300`}
-              />
-            </div>
-            <div>
-              <label className={`block text-sm font-medium ${currentTheme.secondaryTextColor} mb-1`}>Username</label>
-              <input
-                type="text"
-                value={userProfile.username}
-                onChange={(e) => setUserProfile({ ...userProfile, username: e.target.value })}
-                className={`w-full px-4 py-2 rounded-lg border-2 ${currentTheme.inputBorder} ${currentTheme.inputBg} ${theme === 'dark' ? 'text-gray-900' : currentTheme.textColor} focus:outline-none focus:ring-2 focus:ring-emerald-300`}
-              />
-            </div>
-            <div>
-              <label className={`block text-sm font-medium ${currentTheme.secondaryTextColor} mb-1`}>Phone Number</label>
-              <input
-                type="text"
-                value={userProfile.phoneNumber}
-                onChange={(e) => setUserProfile({ ...userProfile, phoneNumber: e.target.value })}
-                className={`w-full px-4 py-2 rounded-lg border-2 ${currentTheme.inputBorder} ${currentTheme.inputBg} ${theme === 'dark' ? 'text-gray-900' : currentTheme.textColor} focus:outline-none focus:ring-2 focus:ring-emerald-300`}
-              />
-            </div>
-            <div className="space-y-4 p-4 rounded-lg border border-gray-300 dark:border-gray-600">
-              <h3 className={`text-lg font-medium ${currentTheme.textColor}`}>Addresses</h3>
-              {addresses.map((addr, index) => (
-                <div key={index} className={`flex items-center justify-between p-2 rounded-lg ${currentTheme.cardHover}`}>
-                  <div className={`flex flex-col`}>
-                    <span className={`text-sm font-semibold ${currentTheme.textColor}`}>
-                      {addr.default && "Default "}Address {index + 1}
-                    </span>
-                    <span className={`text-xs ${currentTheme.secondaryTextColor}`}>
-                      {addr.street}, {addr.city}
-                    </span>
-                  </div>
-                  <motion.button onClick={() => handleDeleteAddress(index)} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
-                    <Trash2 className={`h-5 w-5 text-red-500`} />
-                  </motion.button>
-                </div>
-              ))}
-              {isAddingAddress ? (
-                <div className="space-y-2 mt-4">
-                  <input type="text" placeholder="Street" value={newAddress.street} onChange={(e) => setNewAddress({ ...newAddress, street: e.target.value })} className={`w-full px-4 py-2 rounded-lg border-2 ${currentTheme.inputBorder} ${currentTheme.inputBg} ${theme === 'dark' ? 'text-gray-900' : currentTheme.textColor}`} />
-                  <input type="text" placeholder="City" value={newAddress.city} onChange={(e) => setNewAddress({ ...newAddress, city: e.target.value })} className={`w-full px-4 py-2 rounded-lg border-2 ${currentTheme.inputBorder} ${currentTheme.inputBg} ${theme === 'dark' ? 'text-gray-900' : currentTheme.textColor}`} />
-                  <input type="text" placeholder="State" value={newAddress.state} onChange={(e) => setNewAddress({ ...newAddress, state: e.target.value })} className={`w-full px-4 py-2 rounded-lg border-2 ${currentTheme.inputBorder} ${currentTheme.inputBg} ${theme === 'dark' ? 'text-gray-900' : currentTheme.textColor}`} />
-                  <input type="text" placeholder="Zip" value={newAddress.zip} onChange={(e) => setNewAddress({ ...newAddress, zip: e.target.value })} className={`w-full px-4 py-2 rounded-lg border-2 ${currentTheme.inputBorder} ${currentTheme.inputBg} ${theme === 'dark' ? 'text-gray-900' : currentTheme.textColor}`} />
-                  <input type="text" placeholder="Country" value={newAddress.country} onChange={(e) => setNewAddress({ ...newAddress, country: e.target.value })} className={`w-full px-4 py-2 rounded-lg border-2 ${currentTheme.inputBorder} ${currentTheme.inputBg} ${theme === 'dark' ? 'text-gray-900' : currentTheme.textColor}`} />
-                  <div className="flex space-x-2 mt-2">
-                    <motion.button onClick={handleAddAddress} className={`flex-1 px-4 py-2 rounded-full font-semibold ${currentTheme.accentButtonBg} ${currentTheme.accentButtonHover} text-white transition-colors duration-200`} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>Save Address</motion.button>
-                    <motion.button onClick={() => setIsAddingAddress(false)} className={`flex-1 px-4 py-2 rounded-full font-semibold border-2 border-gray-400 text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-200`} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>Cancel</motion.button>
-                  </div>
-                </div>
-              ) : (
-                <motion.button onClick={() => setIsAddingAddress(true)} className={`w-full px-4 py-2 text-sm rounded-full border-2 ${currentTheme.inputBorder} ${currentTheme.accent} font-semibold transition-colors duration-200`} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>Add New Address</motion.button>
-              )}
-            </div>
-          </motion.div>
-        ) : (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="space-y-4"
-          >
-            <div>
-              <label className={`block text-sm font-medium ${currentTheme.secondaryTextColor} mb-1`}>New Password</label>
-              <input
-                type="password"
-                value={passwords.newPassword}
-                onChange={(e) => setPasswords({ ...passwords, newPassword: e.target.value })}
-                className={`w-full px-4 py-2 rounded-lg border-2 ${currentTheme.inputBorder} ${currentTheme.inputBg} ${theme === 'dark' ? 'text-gray-900' : currentTheme.textColor} focus:outline-none focus:ring-2 focus:ring-emerald-300`}
-              />
-            </div>
-            <div>
-              <label className={`block text-sm font-medium ${currentTheme.secondaryTextColor} mb-1`}>Re-enter New Password</label>
-              <input
-                type="password"
-                value={passwords.reEnterPassword}
-                onChange={(e) => setPasswords({ ...passwords, reEnterPassword: e.target.value })}
-                className={`w-full px-4 py-2 rounded-lg border-2 ${currentTheme.inputBorder} ${currentTheme.inputBg} ${theme === 'dark' ? 'text-gray-900' : currentTheme.textColor} focus:outline-none focus:ring-2 focus:ring-emerald-300`}
-              />
-            </div>
-            <motion.button
-              onClick={() => setIsChangingPassword(false)}
-              className={`w-full px-4 py-2 rounded-full font-semibold border-2 border-gray-400 text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-200`}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              Cancel Password Change
-            </motion.button>
-          </motion.div>
-        )}
-      </div>
-      <div className="flex space-x-4">
-        <motion.button
-          className={`flex-1 px-6 py-2 rounded-full font-semibold ${currentTheme.accentButtonBg} ${currentTheme.accentButtonHover} text-white transition-colors duration-200`}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={handleSaveChanges}
-        >
-          Save Changes
-        </motion.button>
-        <motion.button
-          className={`flex-1 px-6 py-2 rounded-full font-semibold border-2 border-red-500 bg-red-500 hover:bg-red-600 text-white transition-colors duration-200`}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={() => setShowLogoutConfirmation(true)}
-        >
-          Logout
-        </motion.button>
-      </div>
     </div>
-  );
+    );
+  };
+
+
 
   // Render function for the static settings view
   const renderSettings = () => (
@@ -1056,142 +1089,47 @@ useEffect(() => {
   const renderContent = () => {
     switch (view) {
       case "dashboard":
-      case "home":
-        return (
-          <>
-            <div className={`flex-1 p-6 rounded-xl shadow-md ${currentTheme.cardHover}`}>
-              <div className="flex items-center justify-between mb-6">
-                <div className="flex space-x-2">
-                  {["Popular", "Top Selling", "Following", "New"].map((tab) => (
-                    <Tab key={tab} name={tab} />
-                  ))}
-                </div>
-                <motion.button
-                  className={`px-4 py-2 text-sm rounded-full border-2 ${currentTheme.inputBorder} ${currentTheme.accent} font-semibold transition-colors duration-200`}
-                  onClick={() => setView('bestseller')}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  View All
-                </motion.button>
-              </div>
+case "home":
+  return (
+    <>
+      <div className={`flex-1 p-6 rounded-xl shadow-md ${currentTheme.cardHover}`}>
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex space-x-2">
+            {["All Books"].map((tab) => (
+              <Tab key={tab} name={tab} />
+            ))}
+          </div>
+        </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {bookData[activeTab]?.map((book) => (
-                  <BookCard
-                    key={book.id}
-                    book={book}
-                    onAddToWishlist={handleAddToWishlist}
-                    onAddToCart={handleAddToCart}
-                    wishlist={wishlist}
-                  />
-                ))}
-              </div>
-            </div>
-            <div className="flex flex-col lg:flex-row space-y-6 lg:space-y-0 lg:space-x-6 mt-6">
-              <div className={`flex-1 p-6 rounded-xl shadow-md ${currentTheme.cardHover}`}>
-                <h3 className={`text-lg font-bold ${currentTheme.textColor} mb-4`}>Trending</h3>
-                <ul className="space-y-4">
-                  {trendingBooks.map((book) => (
-                    <motion.li
-                      key={book.id}
-                      className="flex items-center justify-between"
-                      whileHover={{ scale: 1.03 }}
-                    >
-                      <div className="flex items-center space-x-4">
-                        <img src={book.cover} alt={book.title} className="w-12 h-18 rounded-lg shadow" />
-                        <div>
-                          <p className={`font-semibold ${currentTheme.textColor}`}>{book.title}</p>
-                          <p className={`text-xs ${currentTheme.secondaryTextColor}`}>{book.author}</p>
-                        </div>
-                      </div>
-                      <div className="flex space-x-2">
-                        <motion.button onClick={() => handleAddToWishlist(book)} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
-                          <Heart className={`h-5 w-5 ${wishlist.some(item => item.id === book.id) ? 'fill-red-500 text-red-500' : 'text-gray-400'} hover:text-red-500`} />
-                        </motion.button>
-                        <motion.button
-                          className={`px-4 py-1 text-sm rounded-full ${currentTheme.accentButtonBg} ${currentTheme.accentButtonHover} text-white transition-colors duration-200`}
-                          onClick={() => handleAddToCart(book)}
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                        >
-                          Add to Cart
-                        </motion.button>
-                      </div>
-                    </motion.li>
-                  ))}
-                </ul>
-              </div>
-              <div className={`flex-1 p-6 rounded-xl shadow-md ${currentTheme.cardHover}`}>
-                <h3 className={`text-lg font-bold ${currentTheme.textColor} mb-4`}>New Arrivals</h3>
-                <ul className="space-y-4">
-                  {newArrivals.map((book) => (
-                    <motion.li
-                      key={book.id}
-                      className="flex items-center justify-between"
-                      whileHover={{ scale: 1.03 }}
-                    >
-                      <div className="flex items-center space-x-4">
-                        <img src={book.cover} alt={book.title} className="w-12 h-18 rounded-lg shadow" />
-                        <div>
-                          <p className={`font-semibold ${currentTheme.textColor}`}>{book.title}</p>
-                          <p className={`text-xs ${currentTheme.secondaryTextColor}`}>{book.author}</p>
-                        </div>
-                      </div>
-                      <div className="flex space-x-2">
-                        <motion.button onClick={() => handleAddToWishlist(book)} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
-                          <Heart className={`h-5 w-5 ${wishlist.some(item => item.id === book.id) ? 'fill-red-500 text-red-500' : 'text-gray-400'} hover:text-red-500`} />
-                        </motion.button>
-                        <motion.button
-                          className={`px-4 py-1 text-sm rounded-full ${currentTheme.accentButtonBg} ${currentTheme.accentButtonHover} text-white transition-colors duration-200`}
-                          onClick={() => handleAddToCart(book)}
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                        >
-                          Add to Cart
-                        </motion.button>
-                      </div>
-                    </motion.li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-            <div className={`flex flex-col space-y-4 p-6 rounded-xl shadow-md mt-6 ${currentTheme.cardHover}`}>
-              <h3 className={`text-lg font-bold ${currentTheme.textColor} mb-4`}>Recommended for You</h3>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {recommendedBooks.map((book) => (
-                  <motion.div
-                    key={book.id}
-                    className={`flex flex-col items-center text-center p-2 rounded-lg ${currentTheme.cardBg}`}
-                    whileHover={{ scale: 1.05, transition: { duration: 0.2 } }}
-                  >
-                    <motion.img
-                      src={book.cover}
-                      alt={book.title}
-                      className="w-32 h-48 rounded-lg shadow-lg"
-                      whileHover={{ scale: 1.1 }}
-                    />
-                    <h3 className={`text-sm font-semibold mt-2 ${currentTheme.textColor}`}>{book.title}</h3>
-                    <p className={`text-xs ${currentTheme.secondaryTextColor}`}>{book.author}</p>
-                    <div className="flex space-x-2 mt-2">
-                      <motion.button onClick={() => handleAddToWishlist(book)} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
-                        <Heart className={`h-6 w-6 ${wishlist.some(item => item.id === book.id) ? 'fill-red-500 text-red-500' : 'text-gray-400'} hover:text-red-500`} />
-                      </motion.button>
-                      <motion.button
-                        className={`w-full px-4 py-1 text-sm rounded-full ${currentTheme.accentButtonBg} ${currentTheme.accentButtonHover} text-white transition-colors duration-200`}
-                        onClick={() => handleAddToCart(book)}
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                      >
-                        Add to Cart
-                      </motion.button>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            </div>
-          </>
-        );
+        {/* DB-driven books */}
+        {loadingBooks ? (
+          <div className="text-center text-lg">Loading books...</div>
+        ) : booksFromDB.length === 0 ? (
+          <div className="text-center text-gray-500">
+            No books available yet.
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+           {booksFromDB.map((product) => {
+          const book = mapProductToBookCard(product);
+
+          return (
+            <BookCard
+              key={book.id}
+              book={book}
+              onAddToWishlist={handleAddToWishlist}
+              onAddToCart={handleAddToCart}
+              wishlist={wishlist}
+           />
+          );
+        })}
+
+          </div>
+        )}
+      </div>
+    </>
+  );
+
       case "wishlist":
         return renderWishlist();
       case "cart":
@@ -1206,8 +1144,6 @@ useEffect(() => {
         return renderPremium();
       case "my-profile":
         return renderMyProfile();
-      case "edit-profile":
-        return renderEditProfile();
       case "settings":
         return renderSettings();
       default:
@@ -1251,12 +1187,20 @@ useEffect(() => {
       className={`absolute top-16 right-4 w-72 p-4 rounded-lg shadow-xl z-50 ${currentTheme.cardBg}`}
     >
       <div className="flex flex-col items-center space-y-4">
-        <div className="h-20 w-20 rounded-full flex items-center justify-center bg-emerald-500 text-white text-3xl font-bold overflow-hidden">
+        <div 
+          className="relative group h-20 w-20 rounded-full flex items-center justify-center bg-emerald-500 text-white text-3xl font-bold overflow-hidden cursor-pointer"
+          onClick={() => {
+             window.location.assign('/user/profile');
+          }}
+        >
           {profileImage ? (
             <img src={profileImage} alt="Profile" className="object-cover h-full w-full" />
           ) : (
             <span className="text-3xl font-bold">{getInitials(userProfile.name)}</span>
           )}
+          <div className="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+            <Camera className="text-white h-6 w-6" />
+          </div>
         </div>
         <div className="text-center">
           <h3 className={`text-lg font-semibold ${currentTheme.textColor}`}>{userProfile.name}</h3>

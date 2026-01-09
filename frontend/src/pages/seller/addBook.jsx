@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import { ToastContainer, toast } from 'react-toastify';
+import axios from "axios";
+
 
 export default function AddBook() {
   const [formData, setFormData] = useState({
@@ -19,18 +21,49 @@ export default function AddBook() {
     });
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
+ const handleSubmit = async (e) => {
+  e.preventDefault();
 
-    if (!formData.title || !formData.description || !formData.price) {
-      toast.error("Please fill in all required fields.", { theme: "colored" });
-      return;
+  if (!formData.title || !formData.price) {
+    toast.error("Title and price required");
+    return;
+  }
+
+  try {
+    const token = localStorage.getItem("sellerToken");
+
+    const data = new FormData();
+    data.append("title", formData.title);
+    data.append("description", formData.description);
+    data.append("price", formData.price);
+    data.append("offer", formData.offer || "");
+
+    if (formData.coverImage) {
+      data.append("coverImage", formData.coverImage);
     }
 
-    // This is where you would handle the form submission to your backend
-    console.log("Book data:", formData);
-    toast.success("Book Added Successfully!", { theme: "colored" });
-  };
+    if (formData.bookPdf) {
+      data.append("bookPdf", formData.bookPdf);
+    }
+
+    await axios.post(
+      "http://localhost:8000/api/v1/sellers/products/add",
+      data,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    toast.success("Book submitted for approval!");
+  } catch (err) {
+    toast.error(err.response?.data?.message || "Upload failed");
+  }
+};
+
+
+
 
   return (
     <>

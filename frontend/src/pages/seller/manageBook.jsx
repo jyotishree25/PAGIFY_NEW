@@ -1,10 +1,10 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import axios from "axios";
 import {
   ArrowLeft,
   Trash2,
   BookOpen,
-  PackageCheck,
   Pencil,
   X,
   Plus,
@@ -12,407 +12,263 @@ import {
 } from "lucide-react";
 import { ToastContainer, toast } from "react-toastify";
 
-export default function ManageBook({ books = [], setBooks = () => {}, darkMode }) {
-  const { id } = useParams();
+export default function ManageBook({ darkMode = false }) {
+  const { productId } = useParams();
   const navigate = useNavigate();
 
-  // --- Static fallback book data ---
-  const sampleBook = {
-    id: "201",
-    title: "Demo Book Title",
-    author: "John Doe",
-    price: "₹499",
-    stock: 25,
-    available: true,
-    category: "Fiction",
-    description:
-      "This is a sample book description. It provides details about the book, storyline, and author background.",
-    image:
-      "https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?auto=format&fit=crop&w=500&q=80",
-  };
-
-  const bookData = books.find((b) => b.id === id) || sampleBook;
-
-  // Local state
-  const [book, setBook] = useState(bookData);
+  const [book, setBook] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
-  const [editForm, setEditForm] = useState(book);
-  const [tempStock, setTempStock] = useState(book.stock);
+  const [editForm, setEditForm] = useState({
+    title: "",
+    price: "",
+    description: "",
+  });
+  const [tempStock, setTempStock] = useState(0);
 
-  // --- Toast helper ---
-  const showToast = (msg, type = "success") => {
-    toast[type](msg, {
-      position: "top-center",
-      autoClose: 2000,
-      hideProgressBar: true,
-      closeOnClick: true,
-      pauseOnHover: false,
-      draggable: false,
-      theme: darkMode ? "dark" : "light",
-    });
-  };
+  /* ================= FETCH PRODUCT ================= */
+  useEffect(() => {
+    async function fetchProduct() {
+      try {
+        const token = localStorage.getItem("sellerToken");
 
-  // --- Delete handler ---
-  const handleDelete = () => {
-    if (window.confirm("Are you sure you want to delete this product?")) {
-      setBooks((prev) => prev.filter((b) => b.id !== book.id));
-      showToast("Product deleted successfully!", "error");
+        if (!token) {
+          toast.error("Session expired");
+          navigate("/seller/login");
+          return;
+        }
+
+        const res = await axios.get(
+          "http://localhost:8000/api/v1/sellers/products/my-products",
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+
+        const products = Array.isArray(res.data)
+          ? res.data
+          : res.data.products || [];
+
+        const found = products.find((p) => p._id === productId);
+
+        if (!found) {
+          toast.error("Product not found");
+          navigate("/seller/dashboard");
+          return;
+        }
+
+        setBook(found);
+        setEditForm({
+          title: found.title || "",
+          price: found.price || "",
+          description: found.description || "",
+        });
+        setTempStock(found.stock || 0);
+      } catch (err) {
+        console.error(err);
+        toast.error("Failed to load product");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchProduct();
+  }, [productId, navigate]);
+
+  /* ================= LOADING GUARD ================= */
+  if (loading) {
+    return <div className="p-10 text-center">Loading product...</div>;
+  }
+
+  if (!book) {
+    return <div className="p-10 text-center">Product not found</div>;
+  }
+
+  /* ================= DELETE ================= */
+  const handleDelete = async () => {
+    if (!window.confirm("Are you sure you want to permanently delete this product?")) {
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem("sellerToken");
+
+      await axios.delete(
+        `http://localhost:8000/api/v1/sellers/products/${productId}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      toast.success("Product deleted successfully");
       navigate("/seller/dashboard");
+    } catch (err) {
+      toast.error("Delete failed");
     }
   };
 
-  // --- Update stock only when clicking button ---
-  const updateStock = () => {
-    if (tempStock < 0) return;
+  /* ================= UPDATE STOCK ================= */
+  const updateStock = async () => {
+    try {
+      const token = localStorage.getItem("sellerToken");
 
-    setBook({ ...book, stock: tempStock, available: tempStock > 0 });
-    setBooks((prev) =>
-      prev.map((b) =>
-        b.id === book.id ? { ...b, stock: tempStock, available: tempStock > 0 } : b
-      )
-    );
-    showToast("Stock updated successfully!", "info");
+      const res = await axios.put(
+        `http://localhost:8000/api/v1/sellers/products/${productId}`,
+        { stock: tempStock },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      setBook(res.data.product);
+      toast.success("Stock updated");
+    } catch (err) {
+      toast.error("Stock update failed");
+    }
   };
 
-  // --- Toggle availability ---
-  const toggleAvailability = () => {
-    const newAvailability = !book.available;
-    setBook({ ...book, available: newAvailability });
-    setBooks((prev) =>
-      prev.map((b) =>
-        b.id === book.id ? { ...b, available: newAvailability } : b
-      )
-    );
-    showToast(
-      newAvailability ? "Marked Available" : "Marked Out of Stock",
-      "info"
-    );
+  /* ================= SAVE EDIT ================= */
+  const saveEdit = async () => {
+    try {
+      const token = localStorage.getItem("sellerToken");
+
+      const res = await axios.put(
+        `http://localhost:8000/api/v1/sellers/products/${productId}`,
+        editForm,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      setBook(res.data.product);
+      setIsEditing(false);
+      toast.success("Product updated");
+    } catch (err) {
+      toast.error("Update failed");
+    }
   };
 
-  // --- Save Edited Product ---
-  const handleEditSave = () => {
-    setBook(editForm);
-    setBooks((prev) =>
-      prev.map((b) => (b.id === book.id ? { ...editForm } : b))
-    );
-    setIsEditing(false);
-    showToast("Product updated successfully!");
-  };
-
-  // --- Upload Book Image ---
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setEditForm({ ...editForm, image: reader.result });
-    };
-    reader.readAsDataURL(file);
-  };
-
+  /* ================= UI ================= */
   return (
     <>
-      <style>
-        {`
-        body {
-          margin: 0;
-          font-family: 'Inter', sans-serif;
-        }
-        .Toastify__toast-container {
-          padding: 10px;
-        }
-        .Toastify__toast {
-          border-radius: 8px;
-          background-color: #ffffff;
-          color: #1F2937;
-          font-family: inherit;
-          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-        }
-        .Toastify__toast--success {
-          border-left: 5px solid #10B981;
-        }
-        .Toastify__toast--error {
-          border-left: 5px solid #EF4444;
-        }
-        .Toastify__toast--info {
-          border-left: 5px solid #10B981;
-        }
-        .Toastify__toast-theme--dark {
-          background-color: #1F2937;
-          color: #fff;
-        }
-        .Toastify__progress-bar {
-          background: rgba(0, 0, 0, 0.3);
-        }
-        .Toastify__progress-bar--dark {
-          background: rgba(255, 255, 255, 0.3);
-        }
-        .Toastify__close-button {
-          color: #1F2937;
-          opacity: 0.8;
-        }
-        .Toastify__close-button--dark {
-          color: #fff;
-        }
-        `}
-      </style>
-      <div
-        className={`p-8 min-h-screen relative ${
-          darkMode ? "bg-black text-white" : "bg-gray-50 text-gray-900"
-        }`}
-      >
-        {/* Header */}
-        <div className="flex items-center space-x-4 mb-8">
-          <button
-            onClick={() => navigate(-1)}
-            className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
-          >
+      <div className={`p-8 min-h-screen ${darkMode ? "bg-black text-white" : "bg-gray-50"}`}>
+        {/* HEADER */}
+        <div className="flex items-center gap-4 mb-6">
+          <button onClick={() => navigate("/seller/dashboard")}>
             <ArrowLeft size={24} />
           </button>
-          <h1 className="text-3xl font-bold">Manage Product: {book.title}</h1>
+          <h1 className="text-2xl font-bold">{book.title}</h1>
         </div>
 
-        {/* Product Card */}
-        <div
-          className={`rounded-xl shadow-lg p-6 grid grid-cols-1 md:grid-cols-3 gap-8 ${
-            darkMode ? "bg-gray-800" : "bg-white"
-          }`}
-        >
-          {/* Left: Product Image */}
-          <div className="flex justify-center items-start">
-            <img
-              src={book.image}
-              alt={book.title}
-              className="w-48 h-64 object-cover rounded-lg shadow"
-            />
-          </div>
+        {/* CARD */}
+        <div className="bg-white p-6 rounded-xl shadow grid md:grid-cols-3 gap-6">
+          <img
+            src={book.coverImage}
+            alt={book.title}
+            className="w-48 h-64 object-cover rounded"
+          />
 
-          {/* Right: Product Info */}
-          <div className="md:col-span-2 space-y-6">
-            {/* Title & Author */}
-            <div>
-              <h2 className="text-2xl font-bold mb-2 flex items-center">
-                <BookOpen className="mr-2" /> {book.title}
-              </h2>
-              <p className="text-gray-600 dark:text-gray-400">by {book.author}</p>
-            </div>
+          <div className="md:col-span-2 space-y-4">
+            <h2 className="text-xl font-bold flex items-center">
+              <BookOpen className="mr-2" /> {book.title}
+            </h2>
 
-            {/* Product Details */}
-            <div className="grid grid-cols-2 gap-4">
-              <p>
-                <span className="font-semibold">Price:</span> {book.price}
-              </p>
-              <p>
-                <span className="font-semibold">Category:</span> {book.category}
-              </p>
-              <p>
-                <span className="font-semibold">Product ID:</span> {book.id}
-              </p>
-              <p className="flex items-center space-x-2">
-                <span className="font-semibold">Status:</span>
-                <span
-                  className={`px-2 py-1 rounded-full text-sm font-medium ${
-                    book.available
-                      ? "bg-green-100 text-green-700"
-                      : "bg-red-100 text-red-700"
-                  }`}
-                >
-                  {book.available ? "Available" : "Out of Stock"}
-                </span>
-              </p>
-            </div>
+            <p><b>Price:</b> ₹{book.price}</p>
+            <p><b>Stock:</b> {book.stock}</p>
+            <p><b>Status:</b> {book.status}</p>
 
-            {/* Stock Management */}
-            <div>
-              <h3 className="font-semibold mb-2 flex items-center">
-                <PackageCheck className="mr-2" /> Stock Management
-              </h3>
-              <div className="flex items-center space-x-4">
-                <button
-                  onClick={() => setTempStock((s) => Math.max(0, s - 1))}
-                  className="p-2 rounded-lg bg-gray-300 dark:bg-gray-700"
-                >
-                  <Minus size={18} />
-                </button>
-                <input
-                  type="number"
-                  min="0"
-                  value={tempStock}
-                  onChange={(e) => setTempStock(parseInt(e.target.value))}
-                  className={`w-24 px-3 py-2 border rounded-lg focus:outline-none text-center ${
-                    darkMode
-                      ? "bg-gray-700 border-gray-600 text-white"
-                      : "bg-white border-gray-300 text-black"
-                  }`}
-                />
-                <button
-                  onClick={() => setTempStock((s) => s + 1)}
-                  className="p-2 rounded-lg bg-gray-300 dark:bg-gray-700"
-                >
-                  <Plus size={18} />
-                </button>
-                <button
-                  onClick={updateStock}
-                  className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
-                >
-                  Update Stock
-                </button>
-              </div>
-              <div className="mt-3">
-                <button
-                  onClick={toggleAvailability}
-                  className={`px-4 py-2 rounded-lg text-white font-medium ${
-                    book.available
-                      ? "bg-red-600 hover:bg-red-700"
-                      : "bg-green-600 hover:bg-green-700"
-                  }`}
-                >
-                  {book.available ? "Mark Out of Stock" : "Mark Available"}
-                </button>
-              </div>
-            </div>
+            {/* STOCK CONTROL */}
+            <div className="flex items-center gap-3">
+              <Minus
+                onClick={() => setTempStock(Math.max(0, tempStock - 1))}
+                className="cursor-pointer"
+              />
+              <input
+                type="number"
+                value={tempStock}
+                onChange={(e) => setTempStock(Number(e.target.value))}
+                className="w-20 border px-2 py-1"
+              />
+              <Plus
+                onClick={() => setTempStock(tempStock + 1)}
+                className="cursor-pointer"
+              />
 
-            {/* Description */}
-            <div>
-              <h3 className="font-semibold mb-2">Description</h3>
-              <p className="text-sm leading-relaxed">{book.description}</p>
-            </div>
-
-            {/* Actions */}
-            <div className="flex space-x-4 mt-6">
               <button
-                onClick={() => {
-                  setEditForm(book);
-                  setIsEditing(true);
-                }}
-                className="px-5 py-2 rounded-lg font-medium flex items-center space-x-2 bg-emerald-600 text-white hover:bg-emerald-700 shadow"
+                onClick={updateStock}
+                className="px-4 py-2 bg-emerald-600 text-white rounded"
               >
-                <Pencil size={18} />
-                <span>Edit Product</span>
+                Update Stock
               </button>
+            </div>
+
+            {/* ACTIONS */}
+            <div className="flex gap-4 mt-4">
+              <button
+                onClick={() => setIsEditing(true)}
+                className="px-4 py-2 bg-emerald-600 text-white rounded flex items-center"
+              >
+                <Pencil size={16} className="mr-2" /> Edit
+              </button>
+
               <button
                 onClick={handleDelete}
-                className="px-5 py-2 rounded-lg font-medium flex items-center space-x-2 bg-red-600 text-white hover:bg-red-700 shadow"
+                className="px-4 py-2 bg-red-600 text-white rounded flex items-center"
               >
-                <Trash2 size={18} />
-                <span>Delete Product</span>
+                <Trash2 size={16} className="mr-2" /> Delete
               </button>
             </div>
           </div>
         </div>
 
-        {/* Edit Product Modal */}
+        {/* EDIT MODAL */}
         {isEditing && (
-          <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
-            <div
-              className={`w-full max-w-lg rounded-xl shadow-lg p-6 relative ${
-                darkMode ? "bg-gray-900 text-white" : "bg-white text-gray-900"
-              }`}
-            >
-              {/* Close button */}
+          <div className="fixed inset-0 bg-black bg-opacity-40 flex justify-center items-center">
+            <div className="bg-white p-6 rounded-xl w-full max-w-lg relative">
               <button
                 onClick={() => setIsEditing(false)}
-                className="absolute top-4 right-4 text-gray-500 hover:text-gray-800 dark:hover:text-gray-300"
+                className="absolute top-4 right-4"
               >
-                <X size={20} />
+                <X />
               </button>
 
-              <h2 className="text-2xl font-bold mb-4">Edit Product</h2>
+              <h2 className="text-xl font-bold mb-4">Edit Product</h2>
 
-              {/* Form */}
-              <div className="space-y-4">
-                <input
-                  type="text"
-                  value={editForm.title}
-                  onChange={(e) =>
-                    setEditForm({ ...editForm, title: e.target.value })
-                  }
-                  placeholder="Book Title"
-                  className="w-full px-3 py-2 border rounded-lg"
-                />
-                <input
-                  type="text"
-                  value={editForm.author}
-                  onChange={(e) =>
-                    setEditForm({ ...editForm, author: e.target.value })
-                  }
-                  placeholder="Author"
-                  className="w-full px-3 py-2 border rounded-lg"
-                />
-                <input
-                  type="text"
-                  value={editForm.price}
-                  onChange={(e) =>
-                    setEditForm({ ...editForm, price: e.target.value })
-                  }
-                  placeholder="Price"
-                  className="w-full px-3 py-2 border rounded-lg"
-                />
-                <input
-                  type="text"
-                  value={editForm.category}
-                  onChange={(e) =>
-                    setEditForm({ ...editForm, category: e.target.value })
-                  }
-                  placeholder="Category"
-                  className="w-full px-3 py-2 border rounded-lg"
-                />
-                <textarea
-                  value={editForm.description}
-                  onChange={(e) =>
-                    setEditForm({ ...editForm, description: e.target.value })
-                  }
-                  placeholder="Description"
-                  className="w-full px-3 py-2 border rounded-lg"
-                  rows={3}
-                />
+              <input
+                className="w-full border p-2 mb-3"
+                value={editForm.title}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, title: e.target.value })
+                }
+                placeholder="Title"
+              />
 
-                {/* Image Upload */}
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageUpload}
-                  className="w-full"
-                />
-                {editForm.image && (
-                  <img
-                    src={editForm.image}
-                    alt="Preview"
-                    className="w-32 h-44 object-cover rounded mt-2 mx-auto"
-                  />
-                )}
-              </div>
+              <input
+                className="w-full border p-2 mb-3"
+                value={editForm.price}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, price: e.target.value })
+                }
+                placeholder="Price"
+              />
 
-              {/* Buttons */}
-              <div className="flex justify-end space-x-4 mt-6">
-                <button
-                  onClick={() => setIsEditing(false)}
-                  className="px-4 py-2 rounded-lg bg-gray-300 hover:bg-gray-400 text-black"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleEditSave}
-                  className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white"
-                >
-                  Save Changes
-                </button>
-              </div>
+              <textarea
+                className="w-full border p-2 mb-3"
+                value={editForm.description}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, description: e.target.value })
+                }
+                placeholder="Description"
+              />
+
+              <button
+                onClick={saveEdit}
+                className="px-4 py-2 bg-emerald-600 text-white rounded"
+              >
+                Save Changes
+              </button>
             </div>
           </div>
         )}
       </div>
-      <ToastContainer
-        position="top-center"
-        autoClose={3000}
-        hideProgressBar={true}
-        newestOnTop={false}
-        closeOnClick
-        rtl={false}
-        pauseOnFocusLoss
-        draggable
-        pauseOnHover
-      />
+
+      <ToastContainer position="top-center" autoClose={2000} />
     </>
   );
 }

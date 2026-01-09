@@ -12,25 +12,6 @@ const App = () => {
     const { id, value } = e.target;
     setFormData((prev) => ({ ...prev, [id]: value }));
   };
-useEffect(() => {
-  const token = localStorage.getItem('token');
-
-  if (!token) return;
-
-  axios.get('http://localhost:8000/api/v1/users/me', {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  })
-  .then(() => {
-    // ✅ token valid → already logged in
-    window.location.assign('/user/home');
-  })
-  .catch(() => {
-    // ❌ token invalid → allow login page
-    localStorage.removeItem('token');
-  });
-}, []);
 
   const togglePasswordVisibility = () => setShowPassword((v) => !v);
 

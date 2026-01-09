@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Eye, EyeOff, Lock, UserRound } from "lucide-react";
 import { ToastContainer, toast } from 'react-toastify';
+import axios from "axios";
 
 export default function SellerLogin() {
   const [formData, setFormData] = useState({ email: "", password: "" });
@@ -32,14 +33,30 @@ export default function SellerLogin() {
     return isValid;
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (validateForm()) {
-      console.log("Login Data:", formData);
-      toast.success("Login successful!", { theme: "colored" });
-      setTimeout(() => navigate("/seller/dashboard"), 1000);
-    }
-  };
+ const handleSubmit = async (e) => {
+  e.preventDefault();
+  if (!validateForm()) return;
+
+  try {
+    const res = await axios.post(
+      "http://localhost:8000/api/v1/sellers/login",
+      formData
+    );
+
+    // 🔐 STORE SELLER TOKEN
+    localStorage.setItem("sellerToken", res.data.token);
+
+    toast.success("Login successful!", { theme: "colored" });
+
+    setTimeout(() => navigate("/seller/dashboard"), 1000);
+  } catch (err) {
+    toast.error(
+      err.response?.data?.message || "Login failed",
+      { theme: "colored" }
+    );
+  }
+};
+
 
   return (
     <>

@@ -1,4 +1,5 @@
 // index.js (Main server file)
+require('dotenv').config(); 
 const express = require('express');
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
@@ -6,7 +7,8 @@ const cors = require('cors');
 const authRoutes = require('./routes/auth');
 const productRoutes = require('./routes/product'); // ✅ already there
 const userRoutes = require('./routes/user');
-
+const sellerRoutes = require('./routes/seller');
+const sellerProductRoutes = require('./routes/sellerProduct');
 
 dotenv.config();
 
@@ -38,6 +40,12 @@ connectDB();
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/products', productRoutes);
 app.use('/api/v1/users', userRoutes);
+app.use('/api/v1/sellers', sellerRoutes);
+app.use('/api/v1/sellers/products', sellerProductRoutes);
+
+
+
+
 
 app.get('/', (req, res) => {
   res.send('Backend Service is running.');

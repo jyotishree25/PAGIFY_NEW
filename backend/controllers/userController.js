@@ -1,6 +1,32 @@
 // backend/controllers/userController.js
 const User = require('../models/user');
 const jwt = require('jsonwebtoken');
+const cloudinary = require('../config/cloudinary');
+const stream = require('stream');
+
+const signToken = (id) => {
+  return jwt.sign({ id }, process.env.JWT_SECRET || 'dev-secret', {
+    expiresIn: process.env.JWT_EXPIRES_IN || '90d',
+  });
+};
+
+// GET /api/v1/users
+exports.getAllUsers = async (req, res) => {
+  try {
+    const users = await User.find().sort({ createdAt: -1 }).select('-password');
+    return res.status(200).json({
+      status: 'success',
+      results: users.length,
+      users,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      status: 'fail',
+      message: 'Server error',
+    });
+  }
+};
+
 // GET /api/v1/users/me
 exports.getMe = async (req, res) => {
   try {
@@ -79,5 +105,49 @@ exports.changePassword = async (req, res) => {
     return res.status(200).json({ status: 'success',token,   message: 'Password updated successfully' });
   } catch (err) {
     return res.status(500).json({ status: 'fail', message: 'Server error' });
+  }
+};
+
+// POST /api/v1/users/upload-profile-picture
+exports.uploadProfilePicture = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ status: 'fail', message: 'No file uploaded' });
+    }
+
+    // Helper to upload buffer to Cloudinary
+    const uploadFromBuffer = (buffer) => {
+      return new Promise((resolve, reject) => {
+        let cld_upload_stream = cloudinary.uploader.upload_stream(
+          { folder: "pagify/users" },
+          (error, result) => {
+            if (result) {
+              resolve(result);
+            } else {
+              reject(error);
+            }
+          }
+        );
+        stream.Readable.from(buffer).pipe(cld_upload_stream);
+      });
+    };
+
+    const result = await uploadFromBuffer(req.file.buffer);
+
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      { profilePicture: result.secure_url },
+      { new: true }
+    ).select('-password');
+
+    return res.status(200).json({
+      status: 'success',
+      message: 'Profile picture updated successfully',
+      user
+    });
+
+  } catch (err) {
+    console.error('Profile upload error:', err);
+    return res.status(500).json({ status: 'fail', message: 'Server error during upload' });
   }
 };

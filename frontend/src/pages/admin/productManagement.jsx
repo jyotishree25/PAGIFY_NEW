@@ -30,18 +30,31 @@ export default function ProductManagement({ onBack, darkMode }) {
       };
 
   // Load products from localStorage on component mount
-  useEffect(() => {
-    const storedProducts = JSON.parse(localStorage.getItem('products') || '[]');
-    const defaultProducts = [
-      { id: "BK-001", title: "The Great Gatsby", price: 12.99, stock: 32, status: "Active", blocked: false },
-      { id: "BK-002", title: "To Kill a Mockingbird", price: 10.5, stock: 0, status: "Draft", blocked: false },
-      { id: "BK-003", title: "1984", price: 9.99, stock: 14, status: "Active", blocked: false },
-      { id: "BK-004", title: "Pride and Prejudice", price: 11.25, stock: 6, status: "Archived", blocked: false }
-    ];
-    
-    // Use stored products if available, otherwise use default products
-    setProducts(storedProducts.length > 0 ? storedProducts : defaultProducts);
-  }, []);
+ useEffect(() => {
+  async function fetchProducts() {
+    try {
+      const res = await fetch("http://localhost:8000/api/v1/products/all");
+      const data = await res.json();
+
+      // Normalize DB products to match table
+      const formatted = data.map((p) => ({
+         _id: p._id, 
+        id: p.id ,          // SKU or Mongo ID
+        title: p.title,
+        price: Number(p.price),
+        stock: Number(p.stock || 0),
+        status: p.blocked ? "Blocked" : p.status,
+        blocked: p.blocked || false,
+      }));
+
+      setProducts(formatted);
+    } catch (err) {
+      console.error("Failed to fetch products", err);
+    }
+  }
+
+  fetchProducts();
+}, []);
 
   const filtered = useMemo(() => {
     return products.filter((p) => {
@@ -72,36 +85,25 @@ export default function ProductManagement({ onBack, darkMode }) {
         return "bg-gray-100 text-gray-700 border border-gray-200";
     }
   };
-  
+
   const handleEditProduct = (productId) => {
-    window.history.pushState({}, "", `/admin/products/edit/${productId}`);
-    window.dispatchEvent(new PopStateEvent('popstate'));
-  };
-  
-  const handleDeleteProduct = (productId) => {
-    // Find the product
-    const productIndex = products.findIndex(p => p.id === productId);
-    if (productIndex === -1) return;
-    
-    const product = products[productIndex];
-    
-    // If product is out of stock, block it instead of deleting
-    if (product.stock === 0) {
-      const updatedProducts = [...products];
-      updatedProducts[productIndex] = {
-        ...product,
-        blocked: true,
-        status: "Out of Stock"
-      };
-      setProducts(updatedProducts);
-      alert(`${product.title} has been blocked until stock is available.`);
-    } else {
-      // For products with stock, show confirmation and delete
-      if (window.confirm(`Are you sure you want to delete ${product.title}?`)) {
-        setProducts(products.filter(p => p.id !== productId));
-      }
-    }
-  };
+  window.history.pushState({}, "", `/admin/products/edit/${productId}`);
+  window.dispatchEvent(new PopStateEvent("popstate"));
+};
+
+const handleDeleteProduct = async (productId) => {
+  if (!window.confirm("Are you sure?")) return;
+
+  await fetch(`http://localhost:8000/api/v1/products/${productId}`, {
+    method: "DELETE",
+  });
+
+  setProducts(prev => prev.filter(p => p._id !== productId));
+};
+
+
+
+
 
   return (
     <div className={`min-h-screen ${theme.bg} ${theme.text} p-4 md:p-8`}>
@@ -161,7 +163,7 @@ export default function ProductManagement({ onBack, darkMode }) {
                 <tr key={p.id} className={`border-t ${darkMode ? 'border-slate-700' : 'border-gray-100'}`}>
                   <td className={`py-3 pr-4 font-medium ${darkMode ? 'text-slate-100' : 'text-gray-900'}`}>{p.id}</td>
                   <td className="py-3 pr-4">{p.title}</td>
-                  <td className="py-3 pr-4">${p.price.toFixed(2)}</td>
+                  <td className="py-3 pr-4">{p.price.toFixed(2)}</td>
                   <td className="py-3 pr-4">{p.stock}</td>
                   <td className="py-3 pr-4">
                     <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${statusClasses(p.status, p.blocked)}`}>
@@ -170,14 +172,14 @@ export default function ProductManagement({ onBack, darkMode }) {
                   </td>
                   <td className="py-3 pr-0 text-right">
                     <button 
-                      onClick={() => handleEditProduct(p.id)}
+                     onClick={() => handleEditProduct(p._id)}
                       className={`px-3 py-1 rounded-md border mr-2 ${darkMode ? 'border-slate-600 hover:bg-slate-700' : 'border-gray-300 hover:bg-gray-50'} transition-all transform hover:scale-105`}
                       disabled={p.blocked}
                     >
                       Edit
                     </button>
                     <button 
-                      onClick={() => handleDeleteProduct(p.id)}
+                      onClick={() => handleDeleteProduct(p._id)}
                       className="px-3 py-1 rounded-md bg-rose-600 text-white hover:bg-rose-700 transition-all transform hover:scale-105"
                     >
                       {p.stock === 0 ? "Block" : "Delete"}

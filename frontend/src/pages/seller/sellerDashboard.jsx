@@ -5,6 +5,7 @@ import lightTheme from "../../assets/sellerLight.png";
 import darkTheme from "../../assets/sellerDark.png";
 import { ToastContainer, toast } from 'react-toastify';
 import {motion} from 'framer-motion';
+import axios from "axios";
 
 import {
   LineChart,
@@ -87,44 +88,32 @@ export default function SellerDashboard() {
   });
 
   // Books (products) as state so delete/edit works
-  const [books, setBooks] = useState([
-    {
-      id: "BK001",
-      title: "The Great Gatsby",
-      author: "F. Scott Fitzgerald",
-      price: "$12",
-      stock: 34,
-      status: "Active",
-      description: "A classic novel about the American Dream.",
-    },
-    {
-      id: "BK002",
-      title: "1984",
-      author: "George Orwell",
-      price: "$10",
-      stock: 12,
-      status: "Active",
-      description: "A dystopian social science fiction novel.",
-    },
-    {
-      id: "BK003",
-      title: "Harry Potter",
-      author: "J.K. Rowling",
-      price: "$20",
-      stock: 50,
-      status: "Pending",
-      description: "The complete collection of the magical saga.",
-    },
-    {
-      id: "BK004",
-      title: "To Kill a Mockingbird",
-      author: "Harper Lee",
-      price: "$15",
-      stock: 22,
-      status: "Active",
-      description: "A novel about racial injustice in the American South.",
-    },
-  ]);
+  const [books, setBooks] = useState([]);
+
+useEffect(() => {
+  async function fetchSellerProducts() {
+    try {
+      const token = localStorage.getItem("sellerToken");
+
+      const res = await axios.get(
+        "http://localhost:8000/api/v1/sellers/products/my-products",
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      setBooks(res.data);
+    } catch (err) {
+      console.error("Failed to load seller products", err);
+    }
+  }
+
+  if (activePage === "Products") {
+    fetchSellerProducts();
+  }
+}, [activePage]);
 
   // Edit product modal
   const [showEditProductModal, setShowEditProductModal] = useState(false);
@@ -245,6 +234,35 @@ export default function SellerDashboard() {
     { label: "Support", icon: <HelpCircle size={18} /> },
     { label: "Settings", icon: <Settings size={18} /> },
   ];
+
+
+  useEffect(() => {
+  const token = localStorage.getItem("sellerToken");
+
+  // 1️⃣ No token → redirect to seller login
+  if (!token) {
+    navigate("/seller/login");
+    return;
+  }
+
+  // 2️⃣ Verify token with backend
+  axios
+    .get("http://localhost:8000/api/v1/sellers/me", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+    .then((res) => {
+      setSellerProfile((prev) => ({
+        ...prev,
+        ...res.data.seller,
+      }));
+    })
+    .catch(() => {
+      localStorage.removeItem("sellerToken");
+      navigate("/seller/login");
+    });
+}, [navigate]);
 
   // ----------------------------
   // Effects
@@ -1014,32 +1032,26 @@ export default function SellerDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredBooks.map((book, i) => (
-                    <tr
-                      key={i}
-                      className={`border-t ${
-                        darkMode ? "border-gray-700 hover:bg-gray-700" : "border-gray-200 hover:bg-emerald-50"
-                      }`}
-                    >
-                      <td className="p-2">{book.title}</td>
-                      <td className="p-2">{book.author}</td>
-                      <td className="p-2">{book.price}</td>
-                      <td className="p-2">{book.stock}</td>
-                      <td
-                        className={`p-2 ${book.status === "Active" ? "text-emerald-500" : "text-red-500"}`}
-                      >
-                        {book.status}
-                      </td>
-                      <td className="p-2 space-x-2">
-                        <button
-                          onClick={() => navigate("/seller/manage-book")}
-                          className="px-4 py-2 bg-emerald-600 text-white rounded-full hover:bg-emerald-700"
-                        >
-                          Manage Product
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {filteredBooks.map((book) => (
+  <tr key={book._id}>
+    <td>{book.title}</td>
+    <td>{book.author || "-"}</td>
+    <td>₹{book.price}</td>
+    <td>{book.stock}</td>
+    <td>{book.status}</td>
+    <td>
+      <button
+        onClick={() =>
+          navigate(`/seller/manage-book/${book._id}`)
+        }
+        className="px-4 py-2 bg-emerald-600 text-white rounded-full"
+      >
+        Manage Product
+      </button>
+    </td>
+  </tr>
+))}
+
                   {filteredBooks.length === 0 && (
                     <tr>
                       <td className="p-4" colSpan={6}>
